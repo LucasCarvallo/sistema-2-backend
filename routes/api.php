@@ -42,7 +42,7 @@ Route::middleware('auth:sanctum')->group(function () {
         $files = Storage::disk('public')->allFiles('videos');
         $categoryFilter = trim((string) $request->query('category', ''));
 
-        $videos = collect($files)
+        $videosByCategory = collect($files)
             ->filter(function (string $path) {
                 return preg_match('/\.(mp4|mov|avi|mkv|webm|m4v)$/i', $path) === 1;
             })
@@ -51,7 +51,6 @@ Route::middleware('auth:sanctum')->group(function () {
                     return str_starts_with($path, 'videos/'.$categoryFilter.'/');
                 });
             })
-            ->values()
             ->map(function (string $path) {
                 $relativePath = preg_replace('#^videos/#', '', $path);
                 $segments = explode('/', (string) $relativePath);
@@ -63,9 +62,26 @@ Route::middleware('auth:sanctum')->group(function () {
                     'url' => '/api/videos/'.ltrim($path, '/'),
                     'size' => Storage::disk('public')->size($path),
                 ];
-            });
+            })
+            ->groupBy('category')
+            ->map(function ($items, $category) {
+                return [
+                    'category' => $category,
+                    'videos' => collect($items)
+                        ->map(function ($item) {
+                            return [
+                                'name' => $item['name'],
+                                'path' => $item['path'],
+                                'url' => $item['url'],
+                                'size' => $item['size'],
+                            ];
+                        })
+                        ->values(),
+                ];
+            })
+            ->values();
 
-        return response()->json($videos);
+        return response()->json($videosByCategory);
     });
 
     Route::get('/videos/{path}', function (string $path) {
