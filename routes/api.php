@@ -58,9 +58,9 @@ Route::post('/logout', function () {
     return response()->json(['message' => 'Logged out successfully']);
 });
 
-Route::get('/me', function (Request $request) use ($mockUsers) {
-    // Simulate authenticated user (for demo purposes)
-    $user = $mockUsers[0]; // Always return the first user
+// Route::get('/me', function (Request $request) use ($mockUsers) {
+//     // Simulate authenticated user (for demo purposes)
+//     $user = $mockUsers[0]; // Always return the first user
 
-    return response()->json($user);
-});
+//     return response()->json($user);
+// });
