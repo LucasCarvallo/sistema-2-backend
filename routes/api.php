@@ -1,26 +1,10 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
-
-$mockUsers = [
-    [
-        'id' => 1,
-        'name' => 'Lucas Admin',
-        'email' => 'lucas@example.com',
-    ],
-    [
-        'id' => 2,
-        'name' => 'Ana Dev',
-        'email' => 'ana@example.com',
-    ],
-    [
-        'id' => 3,
-        'name' => 'Mario QA',
-        'email' => 'mario@example.com',
-    ],
-];
 
 Route::get('/health', function () {
     return response()->json([
@@ -30,37 +14,62 @@ Route::get('/health', function () {
     ]);
 });
 
-Route::get('/users', function () use ($mockUsers) {
-    return response()->json($mockUsers);
+Route::get('/users', function () {
+    return response()->json(
+        User::query()
+            ->select(['id', 'name', 'email'])
+            ->orderBy('id')
+            ->get(),
+    );
 });
 
-Route::post('/login', function (Request $request) use ($mockUsers) {
+Route::post('/login', function (Request $request) {
     $credentials = $request->validate([
         'email' => ['required', 'email'],
         'password' => ['required', 'string', 'min:6'],
     ]);
 
-    $user = collect($mockUsers)
-        ->firstWhere('email', $credentials['email'])
-        ?? [
-            'id' => 999,
-            'name' => 'Mock User',
-            'email' => $credentials['email'],
-        ];
+    $user = User::query()->where('email', $credentials['email'])->first();
+
+    if (!$user || !Hash::check($credentials['password'], $user->password)) {
+        return response()->json([
+            'message' => 'Credenciales inválidas.',
+        ], 401);
+    }
+
+    $token = Str::random(60);
+    $user->forceFill(['remember_token' => $token])->save();
 
     return response()->json([
-        'token' => 'fake-token-'.Str::random(40),
-        'user' => $user,
+        'token' => $token,
+        'user' => $user->only(['id', 'name', 'email']),
     ]);
 });
 
-Route::post('/logout', function () {
+Route::post('/logout', function (Request $request) {
+    $token = $request->bearerToken();
+
+    if ($token) {
+        User::query()->where('remember_token', $token)->update(['remember_token' => null]);
+    }
+
     return response()->json(['message' => 'Logged out successfully']);
 });
 
-// Route::get('/me', function (Request $request) use ($mockUsers) {
-//     // Simulate authenticated user (for demo purposes)
-//     $user = $mockUsers[0]; // Always return the first user
+Route::get('/me', function (Request $request) {
+    $token = $request->bearerToken();
 
-//     return response()->json($user);
-// });
+    if (!$token) {
+        return response()->json(['message' => 'No autenticado.'], 401);
+    }
+
+    $user = User::query()
+        ->where('remember_token', $token)
+        ->first();
+
+    if (!$user) {
+        return response()->json(['message' => 'No autenticado.'], 401);
+    }
+
+    return response()->json($user->only(['id', 'name', 'email']));
+});
