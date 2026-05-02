@@ -53,3 +53,7 @@ Route::post('/login', function (Request $request) use ($mockUsers) {
         'user' => $user,
     ]);
 });
+
+Route::post('/logout', function () {
+    return response()->json(['message' => 'Logged out successfully']);
+});
