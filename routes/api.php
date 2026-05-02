@@ -37,6 +37,24 @@ Route::post('/login', function (Request $request) {
     ]);
 });
 
+Route::get('/videos/{path}', function (string $path) {
+    $relativePath = ltrim($path, '/');
+
+    if (str_contains($relativePath, '..')) {
+        abort(404);
+    }
+
+    $filePath = str_starts_with($relativePath, 'videos/')
+        ? $relativePath
+        : 'videos/'.$relativePath;
+
+    if (! Storage::disk('public')->exists($filePath)) {
+        abort(404);
+    }
+
+    return response()->file(Storage::disk('public')->path($filePath));
+})->where('path', '.*');
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/videos', function (Request $request) {
         $files = Storage::disk('public')->allFiles('videos');
@@ -59,7 +77,7 @@ Route::middleware('auth:sanctum')->group(function () {
                     'name' => basename($path),
                     'path' => $path,
                     'category' => $segments[0] ?? 'sin-categoria',
-                    'url' => '/api/videos/'.ltrim($path, '/'),
+                    'url' => url('/api/videos/'.ltrim($path, '/')),
                     'size' => Storage::disk('public')->size($path),
                 ];
             })
@@ -83,24 +101,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
         return response()->json($videosByCategory);
     });
-
-    Route::get('/videos/{path}', function (string $path) {
-        $relativePath = ltrim($path, '/');
-
-        if (str_contains($relativePath, '..')) {
-            abort(404);
-        }
-
-        $filePath = str_starts_with($relativePath, 'videos/')
-            ? $relativePath
-            : 'videos/'.$relativePath;
-
-        if (! Storage::disk('public')->exists($filePath)) {
-            abort(404);
-        }
-
-        return response()->file(Storage::disk('public')->path($filePath));
-    })->where('path', '.*');
 
     Route::get('/users', function () {
         return response()->json(
