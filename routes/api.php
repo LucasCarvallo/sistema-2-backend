@@ -4,7 +4,6 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Str;
 
 Route::get('/health', function () {
     return response()->json([
@@ -12,15 +11,6 @@ Route::get('/health', function () {
         'app' => 'sistema-lucas-api',
         'version' => 'v1',
     ]);
-});
-
-Route::get('/users', function () {
-    return response()->json(
-        User::query()
-            ->select(['id', 'name', 'email'])
-            ->orderBy('id')
-            ->get(),
-    );
 });
 
 Route::post('/login', function (Request $request) {
@@ -37,39 +27,38 @@ Route::post('/login', function (Request $request) {
         ], 401);
     }
 
-    $token = Str::random(60);
-    $user->forceFill(['remember_token' => $token])->save();
+    $token = $user->createToken('api')->plainTextToken;
 
     return response()->json([
         'token' => $token,
+        'token_type' => 'Bearer',
         'user' => $user->only(['id', 'name', 'email']),
     ]);
 });
 
-Route::post('/logout', function (Request $request) {
-    $token = $request->bearerToken();
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/users', function () {
+        return response()->json(
+            User::query()
+                ->select(['id', 'name', 'email'])
+                ->orderBy('id')
+                ->get(),
+        );
+    });
 
-    if ($token) {
-        User::query()->where('remember_token', $token)->update(['remember_token' => null]);
-    }
+    Route::post('/logout', function (Request $request) {
+        $token = $request->user()?->currentAccessToken();
 
-    return response()->json(['message' => 'Logged out successfully']);
-});
+        if ($token) {
+            $token->delete();
+        }
 
-Route::get('/me', function (Request $request) {
-    $token = $request->bearerToken();
+        return response()->json(['message' => 'Logged out successfully']);
+    });
 
-    if (!$token) {
-        return response()->json(['message' => 'No autenticado.'], 401);
-    }
-
-    $user = User::query()
-        ->where('remember_token', $token)
-        ->first();
-
-    if (!$user) {
-        return response()->json(['message' => 'No autenticado.'], 401);
-    }
-
-    return response()->json($user->only(['id', 'name', 'email']));
+    Route::get('/me', function (Request $request) {
+        return response()->json(
+            $request->user()->only(['id', 'name', 'email']),
+        );
+    });
 });
