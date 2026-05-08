@@ -37,6 +37,52 @@ Route::post('/login', function (Request $request) {
     ]);
 });
 
+Route::get('/videos', function (Request $request) {
+    $files = Storage::disk('public')->allFiles('videos');
+    $categoryFilter = trim((string) $request->query('category', ''));
+
+    $videosByCategory = collect($files)
+        ->filter(function (string $path) {
+            return preg_match('/\.(mp4|mov|avi|mkv|webm|m4v)$/i', $path) === 1;
+        })
+        ->when($categoryFilter !== '', function ($collection) use ($categoryFilter) {
+            return $collection->filter(function (string $path) use ($categoryFilter) {
+                return str_starts_with($path, 'videos/'.$categoryFilter.'/');
+            });
+        })
+        ->map(function (string $path) {
+            $relativePath = preg_replace('#^videos/#', '', $path);
+            $segments = explode('/', (string) $relativePath);
+
+            return [
+                'name' => basename($path),
+                'path' => $path,
+                'category' => $segments[0] ?? 'sin-categoria',
+                'url' => url('/api/videos/'.ltrim($path, '/')),
+                'size' => Storage::disk('public')->size($path),
+            ];
+        })
+        ->groupBy('category')
+        ->map(function ($items, $category) {
+            return [
+                'category' => $category,
+                'videos' => collect($items)
+                    ->map(function ($item) {
+                        return [
+                            'name' => $item['name'],
+                            'path' => $item['path'],
+                            'url' => $item['url'],
+                            'size' => $item['size'],
+                        ];
+                    })
+                    ->values(),
+            ];
+        })
+        ->values();
+
+    return response()->json($videosByCategory);
+});
+
 Route::get('/videos/{path}', function (string $path) {
     $relativePath = ltrim($path, '/');
 
@@ -56,52 +102,6 @@ Route::get('/videos/{path}', function (string $path) {
 })->where('path', '.*');
 
 Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/videos', function (Request $request) {
-        $files = Storage::disk('public')->allFiles('videos');
-        $categoryFilter = trim((string) $request->query('category', ''));
-
-        $videosByCategory = collect($files)
-            ->filter(function (string $path) {
-                return preg_match('/\.(mp4|mov|avi|mkv|webm|m4v)$/i', $path) === 1;
-            })
-            ->when($categoryFilter !== '', function ($collection) use ($categoryFilter) {
-                return $collection->filter(function (string $path) use ($categoryFilter) {
-                    return str_starts_with($path, 'videos/'.$categoryFilter.'/');
-                });
-            })
-            ->map(function (string $path) {
-                $relativePath = preg_replace('#^videos/#', '', $path);
-                $segments = explode('/', (string) $relativePath);
-
-                return [
-                    'name' => basename($path),
-                    'path' => $path,
-                    'category' => $segments[0] ?? 'sin-categoria',
-                    'url' => url('/api/videos/'.ltrim($path, '/')),
-                    'size' => Storage::disk('public')->size($path),
-                ];
-            })
-            ->groupBy('category')
-            ->map(function ($items, $category) {
-                return [
-                    'category' => $category,
-                    'videos' => collect($items)
-                        ->map(function ($item) {
-                            return [
-                                'name' => $item['name'],
-                                'path' => $item['path'],
-                                'url' => $item['url'],
-                                'size' => $item['size'],
-                            ];
-                        })
-                        ->values(),
-                ];
-            })
-            ->values();
-
-        return response()->json($videosByCategory);
-    });
-
     Route::get('/users', function () {
         return response()->json(
             User::query()
