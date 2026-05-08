@@ -38,7 +38,7 @@ Route::post('/login', function (Request $request) {
 });
 
 Route::get('/videos', function (Request $request) {
-    $files = Storage::disk('public')->allFiles('videos');
+    $files = Storage::disk('public')->allFiles('wai/videos');
     $categoryFilter = trim((string) $request->query('category', ''));
 
     $videosByCategory = collect($files)
@@ -47,11 +47,11 @@ Route::get('/videos', function (Request $request) {
         })
         ->when($categoryFilter !== '', function ($collection) use ($categoryFilter) {
             return $collection->filter(function (string $path) use ($categoryFilter) {
-                return str_starts_with($path, 'videos/'.$categoryFilter.'/');
+                return str_starts_with($path, 'wai/videos/'.$categoryFilter.'/');
             });
         })
         ->map(function (string $path) {
-            $relativePath = preg_replace('#^videos/#', '', $path);
+            $relativePath = preg_replace('#^wai/videos/#', '', $path);
             $segments = explode('/', (string) $relativePath);
 
             return [
@@ -90,9 +90,9 @@ Route::get('/videos/{path}', function (string $path) {
         abort(404);
     }
 
-    $filePath = str_starts_with($relativePath, 'videos/')
+    $filePath = str_starts_with($relativePath, 'wai/videos/')
         ? $relativePath
-        : 'videos/'.$relativePath;
+        : 'wai/videos/'.$relativePath;
 
     if (! Storage::disk('public')->exists($filePath)) {
         abort(404);
