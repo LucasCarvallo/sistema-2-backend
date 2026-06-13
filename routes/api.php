@@ -13,6 +13,22 @@ Route::get('/health', function () {
     ]);
 });
 
+// php artisan serve --host=0.0.0.0 --port=8000
+Route::post('/wifi-scan', function (Request $request) {
+    $data = $request->validate([
+        'total_found' => 'required|integer',
+        'visible' => 'required|integer',
+        'devices' => 'required|array',
+    ]);
+
+    // Log::info('WiFi scan recibido', $data);
+
+    return response()->json([
+        'ok' => true,
+        'received' => $data,
+    ]);
+});
+
 require __DIR__.'/api-videos.php';
 require __DIR__.'/api-auth.php';
 
