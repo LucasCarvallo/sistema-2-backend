@@ -13,30 +13,8 @@ Route::get('/health', function () {
     ]);
 });
 
-Route::post('/login', function (Request $request) {
-    $credentials = $request->validate([
-        'email' => ['required', 'email'],
-        'password' => ['required', 'string', 'min:6'],
-    ]);
-
-    $user = User::query()->where('email', $credentials['email'])->first();
-
-    if (! $user || ! Hash::check($credentials['password'], $user->password)) {
-        return response()->json([
-            'message' => 'Credenciales inválidas.',
-        ], 401);
-    }
-
-    $token = $user->createToken('api')->plainTextToken;
-
-    return response()->json([
-        'token' => $token,
-        'token_type' => 'Bearer',
-        'user' => $user->only(['id', 'name', 'email']),
-    ]);
-});
-
 require __DIR__.'/api-videos.php';
+require __DIR__.'/api-auth.php';
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/users', function () {
@@ -45,22 +23,6 @@ Route::middleware('auth:sanctum')->group(function () {
                 ->select(['id', 'name', 'email'])
                 ->orderBy('id')
                 ->get(),
-        );
-    });
-
-    Route::post('/logout', function (Request $request) {
-        $token = $request->user()?->currentAccessToken();
-
-        if ($token) {
-            $token->delete();
-        }
-
-        return response()->json(['message' => 'Logged out successfully']);
-    });
-
-    Route::get('/me', function (Request $request) {
-        return response()->json(
-            $request->user()->only(['id', 'name', 'email']),
         );
     });
 });
