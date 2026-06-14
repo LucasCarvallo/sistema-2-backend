@@ -4,7 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
-Route::get('/videos', function (Request $request) {
+Route::get('/v', function (Request $request) {
     $files = Storage::disk('public')->allFiles('wai/videos');
     $categoryFilter = trim((string) $request->query('category', ''));
 
@@ -25,7 +25,7 @@ Route::get('/videos', function (Request $request) {
                 'name' => basename($path),
                 'path' => $path,
                 'category' => $segments[0] ?? 'sin-categoria',
-                'url' => url('/api/videos/'.ltrim($path, '/')),
+                'url' => url('/api/v/'.ltrim($path, '/')),
                 'size' => Storage::disk('public')->size($path),
             ];
         })
@@ -50,7 +50,7 @@ Route::get('/videos', function (Request $request) {
     return response()->json($videosByCategory);
 });
 
-Route::get('/videos/{path}', function (string $path) {
+Route::get('/v/{path}', function (string $path) {
     $relativePath = ltrim($path, '/');
 
     if (str_contains($relativePath, '..')) {

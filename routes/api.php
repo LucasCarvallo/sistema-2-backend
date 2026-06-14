@@ -29,7 +29,7 @@ Route::post('/wifi-scan', function (Request $request) {
     ]);
 });
 
-require __DIR__.'/api-videos.php';
+require __DIR__.'/api-v.php';
 require __DIR__.'/api-auth.php';
 
 Route::middleware('auth:sanctum')->group(function () {
