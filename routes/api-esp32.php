@@ -3,6 +3,7 @@ use App\Models\AccessPoint;
 use App\Models\AccessPointDetection;
 use App\Models\ScanSession;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 // php artisan serve --host=0.0.0.0 --port=8000
@@ -89,6 +90,70 @@ Route::get('/scan-sessions', function () {
             ->limit(100)
             ->get(),
     );
+});
+
+// GET /access-point-detections-grouped - Resumen agrupado por BSSID
+// Query params opcionales:
+// - mac: BSSID exacta (AA:BB:CC:DD:EE:FF)
+// - limit: cantidad maxima de redes agrupadas
+// - recent_seconds: solo detecciones dentro de los ultimos N segundos (1..3600)
+Route::get('/access-point-detections-grouped', function (Request $request) {
+    $mac = trim((string) $request->query('mac', ''));
+    $limit = (int) $request->query('limit', 100);
+    $recentSeconds = (int) $request->query('recent_seconds', 0);
+
+    if ($limit < 1) {
+        $limit = 1;
+    }
+
+    if ($recentSeconds < 0) {
+        $recentSeconds = 0;
+    }
+    if ($recentSeconds > 3600) {
+        $recentSeconds = 3600;
+    }
+
+    if ($mac !== '' && !preg_match('/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/', $mac)) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Formato MAC invalido. Usa AA:BB:CC:DD:EE:FF',
+        ], 422);
+    }
+
+    $query = DB::table('access_point_detections as d')
+        ->join('access_points as ap', 'ap.id', '=', 'd.access_point_id');
+
+    if ($mac !== '') {
+        $query->whereRaw('LOWER(ap.bssid) = ?', [strtolower($mac)]);
+    }
+
+    if ($recentSeconds > 0) {
+        $query->where('d.created_at', '>=', now()->subSeconds($recentSeconds));
+    }
+
+    $rows = $query
+        ->groupBy('ap.id', 'ap.bssid', 'ap.ssid', 'ap.hidden', 'ap.last_channel')
+        ->selectRaw('ap.bssid')
+        ->selectRaw('ap.ssid')
+        ->selectRaw('ap.hidden')
+        ->selectRaw('ap.last_channel as channel')
+        ->selectRaw('COUNT(*) as samples')
+        ->selectRaw('MAX(d.rssi) as best_rssi')
+        ->selectRaw('ROUND(AVG(d.rssi), 1) as avg_rssi')
+        ->selectRaw('MAX(d.created_at) as last_detected_at')
+        ->selectRaw('MAX(d.scan_session_id) as last_scan_session_id')
+        ->orderByDesc('best_rssi')
+        ->limit($limit)
+        ->get();
+
+    return response()->json([
+        'items' => $rows,
+        'filters' => [
+            'mac' => $mac !== '' ? strtoupper($mac) : null,
+            'limit' => $limit,
+            'recent_seconds' => $recentSeconds > 0 ? $recentSeconds : null,
+        ],
+    ]);
 });
 
 // GET /scan-sessions/{id} - Detalles de una sesión con sus access points detectados
