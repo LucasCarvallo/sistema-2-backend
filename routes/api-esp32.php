@@ -8,7 +8,7 @@ Route::post('/wifi-scan', function (Request $request) {
         'total_found' => 'required|integer|min:0',
         'visible' => 'required|integer|min:0',
         'devices' => 'required|array',
-        'devices.*.ssid' => 'required|string',
+        'devices.*.ssid' => 'nullable|string',
         'devices.*.bssid' => [
             'required',
             'string',
@@ -24,6 +24,15 @@ Route::post('/wifi-scan', function (Request $request) {
             'ok' => false,
             'message' => 'visible no coincide con la cantidad de devices',
         ], 422);
+    }
+
+    foreach ($data['devices'] as $i => $device) {
+        if (($device['hidden'] ?? false) === false && empty($device['ssid'])) {
+            return response()->json([
+                'ok' => false,
+                'message' => "SSID requerido cuando hidden=false en devices.$i",
+            ], 422);
+        }
     }
 
     return response()->json([
