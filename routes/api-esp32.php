@@ -2,6 +2,8 @@
 use App\Models\AccessPoint;
 use App\Models\AccessPointDetection;
 use App\Models\ScanSession;
+use App\Models\WifiClient;
+use App\Models\WifiClientDetection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -77,6 +79,76 @@ Route::post('/wifi-scan', function (Request $request) {
             'total_found' => $data['total_found'],
             'visible' => $data['visible'],
             'devices_stored' => count($data['devices']),
+        ],
+    ]);
+});
+
+// POST /wifi-clients - Detecciones de clientes en modo monitor
+Route::post('/wifi-clients', function (Request $request) {
+    $data = $request->validate([
+        'device_mac' => [
+            'nullable',
+            'string',
+            'regex:/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/',
+        ],
+        'total_found' => 'required|integer|min:0',
+        'visible' => 'required|integer|min:0',
+        'clients' => 'required|array',
+        'clients.*.mac' => [
+            'required',
+            'string',
+            'regex:/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/',
+        ],
+        'clients.*.associated_bssid' => [
+            'nullable',
+            'string',
+            'regex:/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/',
+        ],
+        'clients.*.rssi' => 'required|integer|between:-120,0',
+        'clients.*.channel' => 'required|integer|min:1|max:14',
+    ]);
+
+    if ($data['visible'] !== count($data['clients'])) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'visible no coincide con la cantidad de clients',
+        ], 422);
+    }
+
+    $deviceId = $data['device_mac'] ?? ($request->ip() ?? 'unknown');
+
+    $session = ScanSession::create([
+        'device_id' => $deviceId,
+        'scan_mode' => 'monitor',
+        'total_found' => $data['total_found'],
+        'visible' => $data['visible'],
+    ]);
+
+    foreach ($data['clients'] as $client) {
+        $wifiClient = WifiClient::findOrCreateByMac($client['mac']);
+
+        WifiClientDetection::create([
+            'scan_session_id' => $session->id,
+            'wifi_client_id' => $wifiClient->id,
+            'associated_bssid' => $client['associated_bssid'] ?? null,
+            'rssi' => $client['rssi'],
+            'channel' => $client['channel'],
+            'detected_at' => now(),
+        ]);
+
+        $wifiClient->update([
+            'last_seen_at' => now(),
+            'detections_count' => $wifiClient->detections_count + 1,
+        ]);
+    }
+
+    return response()->json([
+        'ok' => true,
+        'session_id' => $session->id,
+        'summary' => [
+            'total_found' => $data['total_found'],
+            'visible' => $data['visible'],
+            'clients_stored' => count($data['clients']),
         ],
     ]);
 });
