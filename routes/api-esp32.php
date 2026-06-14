@@ -1,4 +1,7 @@
 <?php
+use App\Models\AccessPoint;
+use App\Models\AccessPointDetection;
+use App\Models\ScanSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -35,12 +38,93 @@ Route::post('/wifi-scan', function (Request $request) {
         }
     }
 
+    // Crear sesión de escaneo
+    $session = ScanSession::create([
+        'device_id' => $request->ip() ?? 'unknown',
+        'scan_mode' => 'managed',
+        'total_found' => $data['total_found'],
+        'visible' => $data['visible'],
+    ]);
+
+    // Procesar cada dispositivo detectado
+    foreach ($data['devices'] as $device) {
+        $ap = AccessPoint::findOrCreateByBssid($device['bssid']);
+        
+        // Actualizar datos si es la primera vez o si tenemos SSID
+        if (!$ap->wasRecentlyCreated && $device['ssid']) {
+            $ap->update([
+                'ssid' => $device['ssid'],
+                'hidden' => $device['hidden'],
+            ]);
+        } elseif ($ap->wasRecentlyCreated) {
+            $ap->update([
+                'ssid' => $device['ssid'],
+                'hidden' => $device['hidden'],
+                'first_rssi' => $device['rssi'],
+                'last_channel' => $device['channel'],
+            ]);
+        }
+
+        // Registrar detección
+        $ap->recordDetection($device['rssi'], $device['channel'], $session);
+    }
+
     return response()->json([
         'ok' => true,
+        'session_id' => $session->id,
         'summary' => [
             'total_found' => $data['total_found'],
             'visible' => $data['visible'],
-            'first_bssid' => $data['devices'][0]['bssid'] ?? null,
+            'devices_stored' => count($data['devices']),
         ],
+    ]);
+});
+
+// GET /scan-sessions - Listar todas las sesiones de escaneo
+Route::get('/scan-sessions', function () {
+    return response()->json(
+        ScanSession::query()
+            ->select(['id', 'device_id', 'scan_mode', 'total_found', 'visible', 'created_at'])
+            ->orderBy('created_at', 'desc')
+            ->limit(100)
+            ->get(),
+    );
+});
+
+// GET /scan-sessions/{id} - Detalles de una sesión con sus access points detectados
+Route::get('/scan-sessions/{id}', function ($id) {
+    $session = ScanSession::find($id);
+    
+    if (!$session) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Sesión no encontrada',
+        ], 404);
+    }
+
+    $detections = AccessPointDetection::query()
+        ->where('scan_session_id', $id)
+        ->with('accessPoint:id,bssid,ssid,hidden,last_rssi,last_channel,detections_count')
+        ->orderBy('created_at')
+        ->get();
+
+    return response()->json([
+        'session' => [
+            'id' => $session->id,
+            'device_id' => $session->device_id,
+            'scan_mode' => $session->scan_mode,
+            'total_found' => $session->total_found,
+            'visible' => $session->visible,
+            'created_at' => $session->created_at,
+        ],
+        'detections' => $detections->map(function ($detection) {
+            return [
+                'id' => $detection->id,
+                'rssi' => $detection->rssi,
+                'channel' => $detection->channel,
+                'detected_at' => $detection->created_at,
+                'access_point' => $detection->accessPoint,
+            ];
+        }),
     ]);
 });
