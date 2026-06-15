@@ -228,6 +228,121 @@ Route::get('/access-point-detections-grouped', function (Request $request) {
     ]);
 });
 
+// GET /wifi-client-detections-grouped - Resumen agrupado de clientes monitor
+// Query params opcionales:
+// - associated_bssid: BSSID exacta (AA:BB:CC:DD:EE:FF)
+// - client_mac: MAC cliente exacta (AA:BB:CC:DD:EE:FF)
+// - limit: cantidad maxima de clientes
+// - recent_seconds: solo detecciones dentro de los ultimos N segundos (1..86400)
+Route::get('/wifi-client-detections-grouped', function (Request $request) {
+    $associatedBssid = trim((string) $request->query('associated_bssid', ''));
+    $clientMac = trim((string) $request->query('client_mac', ''));
+    $limit = (int) $request->query('limit', 200);
+    $recentSeconds = (int) $request->query('recent_seconds', 0);
+
+    if ($limit < 1) {
+        $limit = 1;
+    }
+
+    if ($recentSeconds < 0) {
+        $recentSeconds = 0;
+    }
+    if ($recentSeconds > 86400) {
+        $recentSeconds = 86400;
+    }
+
+    $macRegex = '/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/';
+
+    if ($associatedBssid !== '' && !preg_match($macRegex, $associatedBssid)) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Formato associated_bssid invalido. Usa AA:BB:CC:DD:EE:FF',
+        ], 422);
+    }
+
+    if ($clientMac !== '' && !preg_match($macRegex, $clientMac)) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Formato client_mac invalido. Usa AA:BB:CC:DD:EE:FF',
+        ], 422);
+    }
+
+    $query = DB::table('wifi_client_detections as d')
+        ->join('wifi_clients as c', 'c.id', '=', 'd.wifi_client_id');
+
+    if ($associatedBssid !== '') {
+        $query->whereRaw('LOWER(d.associated_bssid) = ?', [strtolower($associatedBssid)]);
+    }
+
+    if ($clientMac !== '') {
+        $query->whereRaw('LOWER(c.mac) = ?', [strtolower($clientMac)]);
+    }
+
+    if ($recentSeconds > 0) {
+        $query->where('d.detected_at', '>=', now()->subSeconds($recentSeconds));
+    }
+
+    $rows = $query
+        ->groupBy('c.id', 'c.mac', 'd.associated_bssid')
+        ->selectRaw('c.mac as client_mac')
+        ->selectRaw('d.associated_bssid')
+        ->selectRaw('COUNT(*) as samples')
+        ->selectRaw('MAX(d.rssi) as best_rssi')
+        ->selectRaw('ROUND(AVG(d.rssi), 1) as avg_rssi')
+        ->selectRaw('MAX(d.detected_at) as last_detected_at')
+        ->selectRaw('MAX(d.scan_session_id) as last_scan_session_id')
+        ->orderByDesc('last_detected_at')
+        ->limit($limit)
+        ->get();
+
+    return response()->json([
+        'items' => $rows,
+        'filters' => [
+            'associated_bssid' => $associatedBssid !== '' ? strtoupper($associatedBssid) : null,
+            'client_mac' => $clientMac !== '' ? strtoupper($clientMac) : null,
+            'limit' => $limit,
+            'recent_seconds' => $recentSeconds > 0 ? $recentSeconds : null,
+        ],
+    ]);
+});
+
+// GET /wifi-client-counts-by-bssid - Conteo de clientes unicos por BSSID
+// Query params opcionales:
+// - recent_seconds: solo detecciones dentro de los ultimos N segundos (1..86400)
+Route::get('/wifi-client-counts-by-bssid', function (Request $request) {
+    $recentSeconds = (int) $request->query('recent_seconds', 0);
+
+    if ($recentSeconds < 0) {
+        $recentSeconds = 0;
+    }
+    if ($recentSeconds > 86400) {
+        $recentSeconds = 86400;
+    }
+
+    $query = DB::table('wifi_client_detections as d')
+        ->join('wifi_clients as c', 'c.id', '=', 'd.wifi_client_id')
+        ->whereNotNull('d.associated_bssid');
+
+    if ($recentSeconds > 0) {
+        $query->where('d.detected_at', '>=', now()->subSeconds($recentSeconds));
+    }
+
+    $rows = $query
+        ->groupBy('d.associated_bssid')
+        ->selectRaw('d.associated_bssid as bssid')
+        ->selectRaw('COUNT(DISTINCT c.mac) as clients_count')
+        ->selectRaw('COUNT(*) as samples')
+        ->selectRaw('MAX(d.detected_at) as last_detected_at')
+        ->get();
+
+    return response()->json([
+        'items' => $rows,
+        'filters' => [
+            'recent_seconds' => $recentSeconds > 0 ? $recentSeconds : null,
+        ],
+    ]);
+});
+
 // GET /scan-sessions/{id} - Detalles de una sesión con sus access points detectados
 Route::get('/scan-sessions/{id}', function ($id) {
     $session = ScanSession::find($id);
