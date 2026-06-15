@@ -142,6 +142,50 @@ Route::post('/wifi-clients', function (Request $request) {
         ]);
     }
 
+    // Inferir access points desde clientes asociados observados en monitor.
+    $monitorAps = [];
+    foreach ($data['clients'] as $client) {
+        $bssid = strtoupper((string) ($client['associated_bssid'] ?? ''));
+        if ($bssid === '') {
+            continue;
+        }
+
+        if (!isset($monitorAps[$bssid])) {
+            $monitorAps[$bssid] = [
+                'rssi' => (int) $client['rssi'],
+                'channel' => (int) $client['channel'],
+            ];
+            continue;
+        }
+
+        if ((int) $client['rssi'] > $monitorAps[$bssid]['rssi']) {
+            $monitorAps[$bssid]['rssi'] = (int) $client['rssi'];
+        }
+
+        if ((int) $client['channel'] > 0) {
+            $monitorAps[$bssid]['channel'] = (int) $client['channel'];
+        }
+    }
+
+    foreach ($monitorAps as $bssid => $apData) {
+        $ap = AccessPoint::findOrCreateByBssid($bssid);
+
+        if ($ap->wasRecentlyCreated) {
+            $ap->update([
+                'ssid' => $ap->ssid ?: null,
+                'hidden' => true,
+                'first_rssi' => $apData['rssi'],
+                'last_channel' => $apData['channel'],
+            ]);
+        } else {
+            $ap->update([
+                'last_channel' => $apData['channel'],
+            ]);
+        }
+
+        $ap->recordDetection($apData['rssi'], $apData['channel'], $session);
+    }
+
     return response()->json([
         'ok' => true,
         'session_id' => $session->id,
@@ -149,6 +193,7 @@ Route::post('/wifi-clients', function (Request $request) {
             'total_found' => $data['total_found'],
             'visible' => $data['visible'],
             'clients_stored' => count($data['clients']),
+            'access_points_inferred' => count($monitorAps),
         ],
     ]);
 });
