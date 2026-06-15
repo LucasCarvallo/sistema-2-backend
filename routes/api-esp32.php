@@ -272,6 +272,90 @@ Route::get('/access-point-detections-grouped', function (Request $request) {
 // - client_mac: MAC cliente exacta (AA:BB:CC:DD:EE:FF)
 // - limit: cantidad maxima de clientes
 // - recent_seconds: solo detecciones dentro de los ultimos N segundos (1..86400)
+Route::get('/wifi-client-detections', function (Request $request) {
+    $associatedBssid = trim((string) $request->query('associated_bssid', ''));
+    $clientMac = trim((string) $request->query('client_mac', ''));
+    $scanSessionId = (int) $request->query('scan_session_id', 0);
+    $limit = (int) $request->query('limit', 500);
+    $recentSeconds = (int) $request->query('recent_seconds', 0);
+
+    if ($limit < 1) {
+        $limit = 1;
+    }
+    if ($limit > 2000) {
+        $limit = 2000;
+    }
+
+    if ($recentSeconds < 0) {
+        $recentSeconds = 0;
+    }
+    if ($recentSeconds > 86400) {
+        $recentSeconds = 86400;
+    }
+
+    $macRegex = '/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/';
+
+    if ($associatedBssid !== '' && !preg_match($macRegex, $associatedBssid)) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Formato associated_bssid invalido. Usa AA:BB:CC:DD:EE:FF',
+        ], 422);
+    }
+
+    if ($clientMac !== '' && !preg_match($macRegex, $clientMac)) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Formato client_mac invalido. Usa AA:BB:CC:DD:EE:FF',
+        ], 422);
+    }
+
+    $query = DB::table('wifi_client_detections as d')
+        ->join('wifi_clients as c', 'c.id', '=', 'd.wifi_client_id')
+        ->join('scan_sessions as s', 's.id', '=', 'd.scan_session_id');
+
+    if ($associatedBssid !== '') {
+        $query->whereRaw('LOWER(d.associated_bssid) = ?', [strtolower($associatedBssid)]);
+    }
+
+    if ($clientMac !== '') {
+        $query->whereRaw('LOWER(c.mac) = ?', [strtolower($clientMac)]);
+    }
+
+    if ($scanSessionId > 0) {
+        $query->where('d.scan_session_id', '=', $scanSessionId);
+    }
+
+    if ($recentSeconds > 0) {
+        $query->where('d.detected_at', '>=', now()->subSeconds($recentSeconds));
+    }
+
+    $rows = $query
+        ->selectRaw('d.id')
+        ->selectRaw('d.scan_session_id')
+        ->selectRaw('s.device_id')
+        ->selectRaw('s.scan_mode')
+        ->selectRaw('c.mac as client_mac')
+        ->selectRaw('c.alias as client_alias')
+        ->selectRaw('d.associated_bssid')
+        ->selectRaw('d.rssi')
+        ->selectRaw('d.channel')
+        ->selectRaw('d.detected_at')
+        ->orderByDesc('d.detected_at')
+        ->limit($limit)
+        ->get();
+
+    return response()->json([
+        'items' => $rows,
+        'filters' => [
+            'associated_bssid' => $associatedBssid !== '' ? strtoupper($associatedBssid) : null,
+            'client_mac' => $clientMac !== '' ? strtoupper($clientMac) : null,
+            'scan_session_id' => $scanSessionId > 0 ? $scanSessionId : null,
+            'limit' => $limit,
+            'recent_seconds' => $recentSeconds > 0 ? $recentSeconds : null,
+        ],
+    ]);
+});
+
 Route::get('/wifi-client-detections-grouped', function (Request $request) {
     $associatedBssid = trim((string) $request->query('associated_bssid', ''));
     $clientMac = trim((string) $request->query('client_mac', ''));
