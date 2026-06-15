@@ -153,6 +153,44 @@ Route::post('/wifi-clients', function (Request $request) {
     ]);
 });
 
+// PATCH /wifi-clients/{mac}/alias - Guardar alias para cliente por MAC
+Route::patch('/wifi-clients/{mac}/alias', function (Request $request, string $mac) {
+    $mac = trim($mac);
+
+    if (!preg_match('/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/', $mac)) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Formato MAC invalido. Usa AA:BB:CC:DD:EE:FF',
+        ], 422);
+    }
+
+    $data = $request->validate([
+        'alias' => 'nullable|string|max:80',
+    ]);
+
+    $client = WifiClient::query()->whereRaw('LOWER(mac) = ?', [strtolower($mac)])->first();
+
+    if (!$client) {
+        return response()->json([
+            'ok' => false,
+            'message' => 'Cliente no encontrado',
+        ], 404);
+    }
+
+    $alias = trim((string) ($data['alias'] ?? ''));
+    $client->update([
+        'alias' => $alias !== '' ? $alias : null,
+    ]);
+
+    return response()->json([
+        'ok' => true,
+        'client' => [
+            'mac' => $client->mac,
+            'alias' => $client->alias,
+        ],
+    ]);
+});
+
 // GET /scan-sessions - Listar todas las sesiones de escaneo
 Route::get('/scan-sessions', function () {
     return response()->json(
@@ -283,8 +321,9 @@ Route::get('/wifi-client-detections-grouped', function (Request $request) {
     }
 
     $rows = $query
-        ->groupBy('c.id', 'c.mac', 'd.associated_bssid')
+        ->groupBy('c.id', 'c.mac', 'c.alias', 'd.associated_bssid')
         ->selectRaw('c.mac as client_mac')
+        ->selectRaw('c.alias as client_alias')
         ->selectRaw('d.associated_bssid')
         ->selectRaw('COUNT(*) as samples')
         ->selectRaw('MAX(d.rssi) as best_rssi')

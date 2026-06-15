@@ -9,6 +9,7 @@ class WifiClient extends Model
 {
     protected $fillable = [
         'mac',
+        'alias',
         'first_seen_at',
         'last_seen_at',
         'detections_count',
